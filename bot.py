@@ -2,7 +2,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import csv
 from datetime import datetime
-from test_pars import clean_old_entries, fetch_news  # Убедитесь, что файл называется test_pars.py
+from parser import clean_old_entries, fetch_news
 from dotenv import load_dotenv
 import os
 import time
