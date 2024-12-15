@@ -4,4 +4,4 @@ requests
 python-dotenv
 openai
 schedule
-
+cloudscraper
