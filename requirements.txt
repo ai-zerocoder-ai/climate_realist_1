@@ -1,0 +1,7 @@
+telebot
+beautifulsoup4
+requests
+python-dotenv
+openai
+schedule
+
