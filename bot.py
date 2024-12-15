@@ -2,7 +2,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import csv
 from datetime import datetime
-from parser import clean_old_entries, fetch_news
+from parser import fetch_news
 from dotenv import load_dotenv
 import os
 import time
@@ -35,7 +35,6 @@ bot = telebot.TeleBot(TOKEN)
 
 # CSV файл с новостями
 csv_file = 'news.csv'
-today_date = datetime.now().strftime('%Y-%m-%d')
 sent_news_file = 'sent_news.txt'  # Файл для хранения отправленных data_key
 
 # Загружаем уже отправленные новости
@@ -58,14 +57,6 @@ def publish_news():
     logging.info("🔄 Начало проверки обновлений новостей...")
 
     try:
-        logging.debug("🧹 Очистка старых записей...")
-        clean_old_entries()
-        logging.info("🧹 Старые записи очищены.")
-    except Exception as e:
-        logging.error(f"Ошибка при очистке старых записей: {e}")
-        return
-
-    try:
         logging.debug("🔍 Получение новых новостей...")
         fetch_news()
         logging.info("🔍 Новые новости получены.")
@@ -73,14 +64,14 @@ def publish_news():
         logging.error(f"Ошибка при получении новостей: {e}")
         return
 
-    # Считываем сегодняшние новости
+    # Считываем все новости из CSV и отправляем те, которые еще не были отправлены
     new_news = []
     try:
         with open(csv_file, 'r', encoding='utf-8') as file:
             reader = csv.DictReader(file)
             for row in reader:
                 logging.debug(f"Обрабатываем статью: {row['title']} ({row['parsed_date']})")
-                if row['parsed_date'] == today_date and row['data_key'] not in sent_news:
+                if row['data_key'] not in sent_news:
                     new_news.append(row)
     except Exception as e:
         logging.error(f"Ошибка чтения {csv_file}: {e}")
@@ -106,14 +97,13 @@ def publish_news():
         )
         markup.add(webapp_button)
 
-        # Формируем текст сообщения с использованием HTML для упрощения форматирования
+        # Формируем текст сообщения с использованием HTML
         message_text = f"📰 <b>{translated_title}</b>\n\n{summary}\n\n<a href='{post_url}'>Читать оригинал</a>"
         if len(message_text) > 4096:
             message_text = message_text[:4093] + "..."
 
-        logging.debug(f"Попытка отправки новости: {translated_title}")
-
         try:
+            logging.debug(f"Попытка отправки новости: {translated_title}")
             bot.send_message(
                 GROUP_ID,
                 message_text,
@@ -124,12 +114,30 @@ def publish_news():
             logging.info(f"✅ Новость отправлена: {translated_title}")
             sent_news.add(news['data_key'])  # Добавляем только после успешной отправки
         except telebot.apihelper.ApiException as api_err:
-            logging.error(f"❌ API ошибка при отправке новости '{translated_title}': {api_err}")
+            if api_err.result.status_code == 429:
+                retry_after = int(api_err.result.json().get('parameters', {}).get('retry_after', 1))
+                logging.error(f"❌ API ошибка 429: Too Many Requests. Повторная попытка через {retry_after} секунд.")
+                time.sleep(retry_after)
+                # Повторная попытка отправки сообщения
+                try:
+                    bot.send_message(
+                        GROUP_ID,
+                        message_text,
+                        parse_mode='HTML',
+                        disable_web_page_preview=False,
+                        reply_markup=markup
+                    )
+                    logging.info(f"✅ Новость отправлена после ожидания: {translated_title}")
+                    sent_news.add(news['data_key'])
+                except Exception as e:
+                    logging.error(f"❌ Не удалось отправить новость после ожидания: {translated_title}. Ошибка: {e}")
+            else:
+                logging.error(f"❌ API ошибка при отправке новости '{translated_title}': {api_err}")
         except Exception as e:
             logging.error(f"❌ Неизвестная ошибка при отправке новости '{translated_title}': {e}")
 
         # Задержка между отправками для предотвращения блокировок
-        time.sleep(1)
+        time.sleep(3)  # Увеличьте задержку до 3 секунд
 
     # Сохраняем отправленные новости
     try:
