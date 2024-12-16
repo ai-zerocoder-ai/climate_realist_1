@@ -113,6 +113,12 @@ def publish_news():
             )
             logging.info(f"✅ Новость отправлена: {translated_title}")
             sent_news.add(news['data_key'])  # Добавляем только после успешной отправки
+
+            # Сохраняем `sent_news.txt` сразу после отправки
+            with open(sent_news_file, 'a', encoding='utf-8') as f:
+                f.write(f"{news['data_key']}\n")
+            logging.debug(f"Добавлен data_key в sent_news.txt: {news['data_key']}")
+
         except telebot.apihelper.ApiException as api_err:
             if api_err.result.status_code == 429:
                 retry_after = int(api_err.result.json().get('parameters', {}).get('retry_after', 1))
@@ -129,6 +135,9 @@ def publish_news():
                     )
                     logging.info(f"✅ Новость отправлена после ожидания: {translated_title}")
                     sent_news.add(news['data_key'])
+                    with open(sent_news_file, 'a', encoding='utf-8') as f:
+                        f.write(f"{news['data_key']}\n")
+                    logging.debug(f"Добавлен data_key в sent_news.txt после повторной попытки: {news['data_key']}")
                 except Exception as e:
                     logging.error(f"❌ Не удалось отправить новость после ожидания: {translated_title}. Ошибка: {e}")
             else:
@@ -139,16 +148,10 @@ def publish_news():
         # Задержка между отправками для предотвращения блокировок
         time.sleep(3)  # Увеличьте задержку до 3 секунд
 
-    # Сохраняем отправленные новости
-    try:
-        with open(sent_news_file, 'w', encoding='utf-8') as f:
-            f.write("\n".join(sent_news))
-        logging.info(f"✅ Сохранены отправленные новости: {len(sent_news)} записей.")
-    except Exception as e:
-        logging.error(f"❌ Ошибка записи в {sent_news_file}: {e}")
+    logging.info(f"✅ Сохранены отправленные новости: {len(sent_news)} записей.")
 
 # Периодическая проверка новостей
-schedule.every(10).minutes.do(publish_news)
+schedule.every(60).minutes.do(publish_news)
 
 if __name__ == "__main__":
     logging.info("🤖 Бот запущен и готов публиковать новости.")
