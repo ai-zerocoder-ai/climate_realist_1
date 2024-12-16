@@ -9,6 +9,8 @@ import logging
 import time
 import random
 from openai import OpenAIError, RateLimitError
+from urllib.parse import urlparse, urlunparse
+import hashlib
 
 # Настройка логирования
 logging.basicConfig(
@@ -19,6 +21,17 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+# Функция для нормализации URL
+def normalize_url(url):
+    parsed = urlparse(url)
+    normalized = parsed._replace(path=parsed.path.rstrip('/'))
+    return urlunparse(normalized)
+
+# Функция для генерации хеша из URL
+def generate_data_key(url):
+    normalized_url = normalize_url(url)
+    return hashlib.sha256(normalized_url.encode('utf-8')).hexdigest()
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -111,9 +124,15 @@ def fetch_news():
                 title = link_tag.text.strip() if link_tag else "Без заголовка"
                 post_url = link_tag['href'] if link_tag else ""
 
-                data_key = post_url  # Используем URL статьи как уникальный идентификатор
+                if not post_url:
+                    logging.warning("URL статьи отсутствует. Пропуск.")
+                    continue
+
+                data_key = generate_data_key(post_url)  # Генерация хеша из нормализованного URL
+                logging.debug(f"Обрабатываем data_key: {data_key}")
+
                 if data_key in existing_keys:
-                    logging.info(f"Новость {data_key} уже добавлена.")
+                    logging.info(f"Новость {post_url} уже добавлена.")
                     continue
 
                 # Парсим полный текст статьи
@@ -132,6 +151,7 @@ def fetch_news():
                 try:
                     writer.writerow([data_key, title, translated_title, summary, post_url, today_date])
                     logging.info(f"Добавлена новость: {title} (перевод: {translated_title})")
+                    existing_keys.add(data_key)  # Добавляем ключ в существующие после записи
                 except Exception as e:
                     logging.error(f"Ошибка при записи новости {title} в CSV: {e}")
 
@@ -224,7 +244,7 @@ def summarize_with_gpt(title, full_text):
         response_translation = openai.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt_translation}],
-            temperature=0.3,
+            temperature=0.2,
         )
         logging.info("Ответ от GPT-4 для перевода получен.")
 
@@ -253,7 +273,6 @@ def summarize_with_gpt(title, full_text):
     except Exception as e:
         logging.error(f"Общая ошибка: {e}")
         return "Перевод недоступен", "Краткое содержание недоступно"
-
 
 if __name__ == "__main__":
     clean_old_entries()
